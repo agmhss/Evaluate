@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Answer Script Evaluator – OCR Auto Checker</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background:#eef2f7; margin:0; padding:0; }
+  .container { max-width: 900px; margin: auto; padding: 20px; }
+  .box { background:#fff; padding:20px; margin-bottom:20px; border-radius:10px; box-shadow:0 0 10px #bbb; }
+  h2, h3 { margin-top:0; }
+  input, button, select { width:100%; padding:10px; margin:8px 0; font-size:16px; }
+  button { cursor:pointer; border:none; background:#2563eb; color:white; border-radius:8px; }
+  button:hover { opacity:.9; }
+  .result-box { white-space: pre-wrap; background:#f9fafb; padding:10px; border-radius:8px; }
+  table { width:100%; border-collapse: collapse; margin-top:10px; }
+  th, td { border:1px solid #aaa; padding:8px; text-align:center; }
+  .small { font-size:14px; color:#555; }
+</style>
+</head>
+
+<body>
+<div class="container">
+<h2>📘 Answer Script Evaluator (OCR Powered)</h2>
+
+<div class="box">
+<h3>1. Upload Answer Key (PDF / DOC / Image)</h3>
+<input type="file" id="answerKey" />
+<div id="answerKeyPreview" class="small"></div>
+</div>
+
+<div class="box">
+<h3>2. Upload Student Answer Script (Images/PDF)</h3>
+<input type="file" id="studentScript" multiple />
+<button onclick="runOCR()">Run OCR</button>
+<div id="ocrOutput" class="result-box"></div>
+</div>
+
+<div class="box">
+<h3>3. Exam & Student Details</h3>
+<input id="examNo" placeholder="Exam No">
+<input id="studentName" placeholder="Student Name">
+<input id="classSec" placeholder="Class & Section">
+<input id="subject" placeholder="Subject">
+
+<h3>Marks Setup</h3>
+<input id="totalQ" type="number" placeholder="Total Questions">
+<input id="marksPerQ" type="number" placeholder="Marks per Question">
+</div>
+
+<div class="box">
+<h3>4. Score Entry</h3>
+<textarea id="scores" rows="4" placeholder="Enter marks comma-separated. Example: 5,3,4,2"></textarea>
+<button onclick="calculateScore()">Calculate Total Score</button>
+
+<div id="scoreBox" class="result-box"></div>
+<button onclick="saveResult()">Save Result</button>
+</div>
+
+<div class="box">
+<h3>5. Saved Results</h3>
+<table id="resultTable">
+<thead><tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr></thead>
+<tbody></tbody>
+</table>
+<button onclick="downloadAllPDF()">Download All Results (PDF)</button>
+</div>
+
+</div>
+
+<script>
+document.getElementById('answerKey').addEventListener('change', function(){
+    document.getElementById('answerKeyPreview').innerHTML =
+        "Uploaded: " + this.files[0].name;
+});
+
+async function runOCR(){
+    const files = document.getElementById('studentScript').files;
+    let text = "";
+
+    for(let f of files){
+        const result = await Tesseract.recognize(f, 'eng', {
+            logger: m => console.log(m)
+        });
+        text += result.data.text + "\n\n";
+    }
+
+    document.getElementById('ocrOutput').innerText = text;
+}
+
+function calculateScore(){
+    const marks = document.getElementById("scores").value.split(",").map(n=>Number(n.trim()));
+    const total = marks.reduce((a,b)=>a+b,0);
+    document.getElementById("scoreBox").innerText = "Total Score: " + total;
+}
+
+let resultList = [];
+
+function saveResult(){
+    const examNo = document.getElementById("examNo").value;
+    const name = document.getElementById("studentName").value;
+    const score = document.getElementById("scoreBox").innerText.replace("Total Score: ","");
+
+    resultList.push({examNo,name,score});
+    refreshTable();
+}
+
+function refreshTable(){
+    const tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+
+    resultList.forEach((r, i)=>{
+        tbody.innerHTML += `<tr>
+            <td>${i+1}</td>
+            <td>${r.examNo}</td>
+            <td>${r.name}</td>
+            <td>${r.score}</td>
+        </tr>`;
+    });
+}
+
+function downloadAllPDF(){
+    const w = window.open();
+    let html = "<h2>Results</h2><table border='1' style='width:100%;border-collapse:collapse;'>";
+    html += "<tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr>";
+
+    resultList.forEach((r,i)=>{
+        html += `<tr><td>${i+1}</td><td>${r.examNo}</td><td>${r.name}</td><td>${r.score}</td></tr>`;
+    });
+
+    html += "</table>";
+
+    w.document.write(html);
+    w.print();
+    w.close();
+}
+</script>
+
+</body>
+</html>
