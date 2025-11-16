@@ -1,156 +1,224 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>AI Answer Scoring Demo</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Answer Script Evaluator – OCR Auto Checker</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; background:#f4f5fb; padding:20px; }
-  h1 { text-align:center; color:#333; }
-  .box {
-    background:white; padding:15px; margin-bottom:15px;
-    border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1);
-  }
-  textarea {
-    width:100%; min-height:100px;
-    border-radius:6px; border:1px solid #aaa;
-    padding:8px; font-family:inherit; font-size:14px;
-  }
-  label { font-weight:bold; display:block; margin-bottom:6px; }
-  button {
-    background:#4b0082; color:white; border:none;
-    padding:10px 18px; border-radius:8px;
-    cursor:pointer; font-size:15px;
-  }
-  button:disabled { opacity:0.6; cursor:not-allowed; }
-  #resultScore { font-size:20px; font-weight:bold; margin-top:10px; }
-  #resultFeedback { margin-top:6px; white-space:pre-wrap; }
+  body { font-family: Arial, sans-serif; background:#eef2f7; margin:0; padding:0; }
+  .container { max-width: 900px; margin: auto; padding: 20px; }
+  .box { background:#fff; padding:20px; margin-bottom:20px; border-radius:10px; box-shadow:0 0 10px #bbb; }
+  h2, h3 { margin-top:0; }
+  input, button, select { width:100%; padding:10px; margin:8px 0; font-size:16px; }
+  button { cursor:pointer; border:none; background:#2563eb; color:white; border-radius:8px; }
+  button:hover { opacity:.9; }
+  .result-box { white-space: pre-wrap; background:#f9fafb; padding:10px; border-radius:8px; }
+  table { width:100%; border-collapse: collapse; margin-top:10px; }
+  th, td { border:1px solid #aaa; padding:8px; text-align:center; }
+  .small { font-size:14px; color:#555; }
 </style>
 </head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Answer Script Evaluator – OCR Auto Checker</title>
+
+<!-- PDF.js + Tesseract.js v5 -->
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+  /* Your existing CSS */
+</style>
+</head>
+  
+
 <body>
-
-<h1>📝 AI Answer Scoring</h1>
+<div class="container">
+<h2>📘 Answer Script Evaluator (OCR Powered)</h2>
 
 <div class="box">
-  <label for="question">Question (optional, but helps AI)</label>
-  <textarea id="question" placeholder="E.g. Explain the process of photosynthesis."></textarea>
+<h3>1. Upload Answer Key (PDF / DOC / Image)</h3>
+<input type="file" id="answerKey" />
+<div id="answerKeyPreview" class="small"></div>
 </div>
 
 <div class="box">
-  <label for="answerKey">Answer Key (Teacher's Reference Answer)</label>
-  <textarea id="answerKey" placeholder="Type the correct model answer here..."></textarea>
+<h3>2. Upload Student Answer Script (Images/PDF)</h3>
+<input type="file" id="studentScript" multiple />
+<button onclick="runOCR()">Run OCR</button>
+<div id="ocrOutput" class="result-box"></div>
 </div>
 
 <div class="box">
-  <label for="studentAnswer">Student's Script / Answer</label>
-  <textarea id="studentAnswer" placeholder="Paste or type the student's answer here..."></textarea>
+<h3>3. Exam & Student Details</h3>
+<input id="examNo" placeholder="Exam No">
+<input id="studentName" placeholder="Student Name">
+<input id="classSec" placeholder="Class & Section">
+<input id="subject" placeholder="Subject">
+
+<h3>Marks Setup</h3>
+<input id="totalQ" type="number" placeholder="Total Questions">
+<input id="marksPerQ" type="number" placeholder="Marks per Question">
 </div>
 
 <div class="box">
-  <button id="scoreBtn" onclick="scoreWithAI()">Score with AI</button>
-  <span id="status" style="margin-left:10px; font-size:13px; color:#555;"></span>
-  <div id="resultScore"></div>
-  <div id="resultFeedback"></div>
+<h3>4. Score Entry</h3>
+<textarea id="scores" rows="4" placeholder="Enter marks comma-separated. Example: 5,3,4,2"></textarea>
+<button onclick="calculateScore()">Calculate Total Score</button>
+
+<div id="scoreBox" class="result-box"></div>
+<button onclick="saveResult()">Save Result</button>
+</div>
+
+<div class="box">
+<h3>5. Saved Results</h3>
+<table id="resultTable">
+<thead><tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr></thead>
+<tbody></tbody>
+</table>
+<button onclick="downloadAllPDF()">Download All Results (PDF)</button>
+</div>
+
 </div>
 
 <script>
-// ⚠️ For personal/local use only – don’t expose this key on public sites.
-const OPENAI_API_KEY = "YOUR_API_KEY_HERE";
+// Tesseract.js v5+ (Recommended)
+const { createWorker } = Tesseract;
 
-// Call OpenAI API to score the answer
-async function scoreWithAI() {
-  const question = document.getElementById('question').value.trim();
-  const answerKey = document.getElementById('answerKey').value.trim();
-  const studentAnswer = document.getElementById('studentAnswer').value.trim();
-  const statusEl = document.getElementById('status');
-  const scoreEl = document.getElementById('resultScore');
-  const feedbackEl = document.getElementById('resultFeedback');
-  const btn = document.getElementById('scoreBtn');
+document.getElementById('answerKey').addEventListener('change', function(){
+    document.getElementById('answerKeyPreview').innerHTML =
+        "Uploaded: " + (this.files[0]?.name || "None");
+});
 
-  scoreEl.textContent = "";
-  feedbackEl.textContent = "";
+async function runOCR(){
+    const files = document.getElementById('studentScript').files;
+    const outputDiv = document.getElementById('ocrOutput');
+    
+    if (files.length === 0) {
+        outputDiv.innerText = "⚠️ Please upload at least one student answer script.";
+        return;
+    }
 
-  if (!answerKey || !studentAnswer) {
-    alert("Please enter both the Answer Key and the Student's Answer.");
-    return;
-  }
+    outputDiv.innerText = "🔄 Running OCR... Please wait (this may take 10-60 seconds per page)";
 
-  btn.disabled = true;
-  statusEl.textContent = "Scoring with AI...";
-
-  try {
-    const prompt = `
-You are a strict but fair exam evaluator.
-
-Compare the STUDENT_ANSWER to the ANSWER_KEY for the QUESTION.
-
-- Give a score from 0 to 10.
-- Consider: correctness, coverage of key points, clarity, and relevance.
-- Be concise.
-
-Return ONLY valid JSON in this format:
-{"score": number, "feedback": "short explanation"}
-
-QUESTION:
-${question || "(No question text provided)"}
-
-ANSWER_KEY:
-${answerKey}
-
-STUDENT_ANSWER:
-${studentAnswer}
-`;
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + OPENAI_API_KEY
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",   // or another chat-capable model
-        messages: [
-          { role: "system", content: "You are an exam grading assistant. Always respond with valid JSON." },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.2
-      })
+    const worker = await createWorker('eng', 1, {
+        logger: m => {
+            if (m.status === 'recognizing text') {
+                outputDiv.innerText = `🔄 Progress: ${(m.progress * 100).toFixed(0)}%`;
+            }
+        }
     });
 
-    if (!response.ok) {
-      throw new Error("API error: " + response.status + " " + (await response.text()));
-    }
+    let fullText = "";
 
-    const data = await response.json();
-    const content = data.choices[0].message.content.trim();
-
-    // Try to parse JSON returned by the model
-    let result;
     try {
-      result = JSON.parse(content);
-    } catch (e) {
-      // If the model added extra text around JSON, try to extract JSON part
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("Could not parse AI response as JSON:\n" + content);
-      }
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            outputDiv.innerText = `🔄 Processing ${file.name}... (${i+1}/${files.length})`;
+
+            let imageUrl;
+
+            // Handle PDF: Convert first page to image
+            if (file.type === "application/pdf") {
+                const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 2.0 });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                await page.render({ canvasContext: context, viewport }).promise;
+                imageUrl = canvas.toDataURL('image/png');
+            } else {
+                imageUrl = URL.createObjectURL(file);
+            }
+
+            const result = await worker.recognize(imageUrl);
+            fullText += `--- Page: ${file.name} ---\n${result.data.text}\n\n`;
+
+            if (imageUrl.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
+        }
+
+        outputDiv.innerText = fullText || "No text detected.";
+    } catch (err) {
+        console.error(err);
+        outputDiv.innerText = `❌ OCR Failed: ${err.message}\n\nTip: Try with clear handwritten/printed images. PDFs must have scannable text/images.`;
+    } finally {
+        await worker.terminate();
+    }
+}
+
+// Load pdf.js for PDF → Image conversion
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// Rest of your functions remain same
+function calculateScore(){
+    const input = document.getElementById("scores").value;
+    if (!input.trim()) {
+        document.getElementById("scoreBox").innerText = "⚠️ Enter marks first.";
+        return;
+    }
+    const marks = input.split(",").map(n => Number(n.trim())).filter(n => !isNaN(n));
+    const total = marks.reduce((a,b) => a+b, 0);
+    document.getElementById("scoreBox").innerText = `Total Score: ${total}`;
+}
+
+let resultList = [];
+
+function saveResult(){
+    const examNo = document.getElementById("examNo").value.trim();
+    const name = document.getElementById("studentName").value.trim();
+    const scoreText = document.getElementById("scoreBox").innerText;
+
+    if (!examNo || !name || !scoreText.includes("Total Score")) {
+        alert("Fill Exam No, Name, and Calculate Score first!");
+        return;
     }
 
-    const score = result.score;
-    const feedback = result.feedback || "";
+    const score = scoreText.replace("Total Score: ", "").trim();
+    resultList.push({examNo, name, score});
+    refreshTable();
 
-    scoreEl.textContent = `Score: ${score} / 10`;
-    feedbackEl.textContent = `Feedback: ${feedback}`;
+    // Clear form
+    document.getElementById("examNo").value = "";
+    document.getElementById("studentName").value = "";
+    document.getElementById("scores").value = "";
+    document.getElementById("scoreBox").innerText = "";
+}
 
-  } catch (err) {
-    console.error(err);
-    alert("Error while scoring: " + err.message);
-  } finally {
-    btn.disabled = false;
-    statusEl.textContent = "";
-  }
+function refreshTable(){
+    const tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+    resultList.forEach((r, i) => {
+        tbody.innerHTML += `<tr>
+            <td>${i+1}</td>
+            <td>${r.examNo}</td>
+            <td>${r.name}</td>
+            <td>${r.score}</td>
+        </tr>`;
+    });
+}
+
+function downloadAllPDF(){
+    if (resultList.length === 0) {
+        alert("No results to download!");
+        return;
+    }
+    const w = window.open();
+    let html = `<h2>Exam Results</h2>
+    <table border="1" style="width:100%; border-collapse:collapse; font-family:Arial;">
+    <tr><th>Sl.No</th><th>Exam No</th><th>Name</th><th>Score</th></tr>`;
+
+    resultList.forEach((r,i) => {
+        html += `<tr><td>${i+1}</td><td>${r.examNo}</td><td>${r.name}</td><td>${r.score}</td></tr>`;
+    });
+    html += `</table><p><small>Generated on: ${new Date().toLocaleString('en-IN')}</small></p>`;
+
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
 }
 </script>
 
